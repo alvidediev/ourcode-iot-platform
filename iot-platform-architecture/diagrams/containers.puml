@@ -1,0 +1,92 @@
+@startuml C4_Elements
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
+!include $ICONURL/devicons2/spring_original.puml
+!include $ICONURL/font-awesome-6/golang.puml
+!include $ICONURL/devicons2/redis.puml
+!include $ICONURL/font-awesome-6/key.puml
+!include $ICONURL/devicons2/apachekafka_original.puml
+!include $ICONURL/font-awesome-6/robot.puml
+!include $ICONURL/devicons/postgresql.puml
+!include $ICONURL/devicons2/cassandra.puml
+!include $ICONURL/font-awesome-6/server.puml
+!include $ICONURL/devicons2/prometheus_original.puml
+!include $ICONURL/font-awesome-6/computer.puml
+!include $ICONURL/devicons2/grafana.puml
+
+Container_Boundary(platform, "IoT Platform") {
+    Boundary(microservices, "Microservices") {
+        Container(api, "Api Gateway", "Spring Cloud Gateway", "Маршрутизация и авторизация", $sprite=spring_original)
+        Container(api_orc, "Api Orchestrator", "Spring Boot", "Оркестратор для вызовов других микросервисов", $sprite=spring_original)
+        Container(command, "Command Service", "Go", "Принимает команды по gRPC и отдается их устройствам. Работает с отдельной БД PostgreSQL", $sprite=golang)
+        Container(device, "Device Service", "Spring Boot + ShardingSphere-jdbc", "CRUD API по устройствам. Использует встроенное шардирование через JDBC", $sprite=spring_original)
+        Container(events, "Events Service", "Spring Boot", "Чтение событиый из Cassandra", $sprite=spring_original)
+        Container(events_collector, "Events Collector", "Spring Boot", "Kafka -> Cassandra + device-id", $sprite=spring_original)
+        Container(device_collector, "Device Collector", "Spring Boot", "Получается device_id сохраняется в PostgreSQL (Devices)", $sprite=spring_original)
+        Container(failes_events, "Failes Events Processor", "Spring Boot", "DLT -> JSON в MinIO", $sprite=spring_original)
+    }
+    Boundary(observability, "Observability") {
+            Container_Ext(node_exporter, "Node exporter", "Агент сбора метрик ОС", "CPU / RAM / SWAP / etc", $sprite=computer)
+            Container_Ext(postgresql_exporter, "PostgreSQL exporter", "Агент сбора метрик PostgreSQL", "Количество активных соединений / использование памяти / время выполнения запросов / etc", $sprite=computer)
+            Container_Ext(kafka_exporter, "Kafka exporter", "Агент сбора метрик Kafka", "Загрузку брокеров / Производительность / Состояние потребителей / Состояние топиков / etc", $sprite=computer)
+
+            Container_Ext(prometheus, "Prometheus", "Система мониторинга", "Сбор метрик", $sprite = prometheus_original)
+            Container_Ext(loki, "Loki", "Система сбора логов", "Сбор, индексация, хранение логов", $sprite = computer)
+            Container_Ext(tempo, "Tempo", "Система мониторинга", "Хранение и анализ трейсов", $sprite = computer)
+            Container_Ext(alloy, "Alloy", "Универсальный агент", "Обработка и передача трейсов", $sprite = computer)
+            Container_Ext(grafana, "Grafana", "Визуализация мониторинга", "Анализ и визуализация мониторинга", $sprite = grafana)
+        }
+
+    Boundary(ext_containers, "System Ext") {
+        Container_Ext(kafka, "Kafka", "Kafka", "events / dlt / device-id / топики", $sprite=apachekafka_original)
+        Container_Ext(keycloak, "Keycloak", "OAuth2", "Аутентификация и авторизация", $sprite=key)
+        Container_Ext(redis, "Redis", "In memory cach", "Кэширование запросов", $sprite=redis)
+        Container_Ext(iot, "IoT Devices", "Встраиваемые устройства", "Отправляют телеметрию и получаются комангды", $sprite=robot)
+        Container_Ext(postgre, "PostgreSQL (Commands)", "Реляционная бд", "Отдельная база для команд. Использхуется Go-сервисом", $sprite=postgresql)
+        Container_Ext(postgre_devices, "PostgreSQL (Devices)", "Реляционная бд", "Шардирование база данных устройств. Синхронная репликация каждого шарда.", $sprite=postgresql)
+        Container_Ext(cassandra, "Cassandra", "NoSQL", "Хранение событий", $sprite=cassandra)
+        Container_Ext(minio, "MinIO", "Объектное хранилище", "Сохранение ошибок DLT", $sprite=server)
+        }
+
+
+
+}
+
+
+Rel(api, api_orc, "REST", "JWT")
+Rel(api, keycloak, "OIDC авторизация", "Получение команд")
+Rel(api_orc, command, "gRPC", "Отправка команд")
+Rel(api_orc, device, "REST", "Отправка команд")
+Rel(api_orc, events, "REST")
+Rel(api_orc, redis, "Кэширование")
+Rel(iot, command, "gRPC", "Получение команд")
+Rel(command, postgre, "JDBC")
+Rel(device, postgre_devices, "Sharded JDBC")
+Rel(events, cassandra, "Read: события")
+Rel(events_collector, cassandra, "Write: события")
+Rel(events_collector, kafka, "Consume: events-topic")
+Rel(events_collector, kafka, "Produce: device-id-topic")
+Rel(events_collector, kafka, "Produce: dlt-topic")
+Rel(device_collector, kafka, "Consume: device-id-topic")
+Rel(failes_events, kafka, "Consume: dlt-topic")
+Rel(failes_events, minio, "Save: JSON")
+
+
+
+
+
+
+
+Rel(prometheus, node_exporter, "")
+Rel(prometheus, postgresql_exporter, "")
+Rel(prometheus, kafka_exporter, "")
+Rel(grafana, prometheus, "")
+Rel(alloy, tempo, "")
+Rel(grafana, tempo, "")
+Rel(grafana, loki, "")
+
+
+
+Rel(observability, microservices, "Получение метрик, логов, трейсов")
+Rel(observability, ext_containers, "Получение метрик, логов, трейсов")
+@enduml
