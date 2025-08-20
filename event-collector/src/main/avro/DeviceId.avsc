@@ -1,0 +1,8 @@
+{
+  "type": "record",
+  "name": "DeviceId",
+  "namespace": "avro",
+  "fields": [
+    { "name": "eventId", "type": "string" }
+  ]
+}
