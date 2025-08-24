@@ -1,0 +1,26 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop # Hibernate сам создаст таблицы
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        show_sql: true
+        format_sql: true
+
+  cassandra:
+    schema-action: recreate_drop_unused
+    local-datacenter: datacenter1
+    keyspace-name: test_keyspace
+
+  flyway:
+    enabled: false  # в тестах отключаем, чтобы не мешал контейнеру
+    user: test
+    password: test
+    url: jdbc:postgresql://localhost:5432/testdb
+
+  kafka:
+    bootstrap-servers: dummy:9092
+    properties:
+      schema.registry.url: mock://test
+
