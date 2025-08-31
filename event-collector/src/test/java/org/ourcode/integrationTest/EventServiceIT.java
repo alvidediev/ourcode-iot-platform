@@ -1,13 +1,13 @@
-package org.ourcode.integration;
+package org.ourcode.integrationTest;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.ourcode.model.EventEntity;
 import org.ourcode.service.event.impl.EventServiceImpl;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.autoconfigure.data.cassandra.DataCassandraTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.cassandra.core.CassandraOperations;
-import org.springframework.data.cassandra.core.CassandraTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.CassandraContainer;
@@ -17,11 +17,13 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.util.Arrays;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
-@SpringBootTest
+@DataCassandraTest
+@Import(EventServiceImpl.class)
 @Testcontainers
-class EventServiceIntegrationTest {
+class EventServiceIT {
 
     @Container
     static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
@@ -30,11 +32,14 @@ class EventServiceIntegrationTest {
 
 
     @DynamicPropertySource
-    static void cassandraProperties(DynamicPropertyRegistry registry) {
+    static void kafkaProperties(DynamicPropertyRegistry registry) {
         registry.add("spring.cassandra.contact-points",
                 () -> cassandra.getHost() + ":" + cassandra.getMappedPort(9042));
         registry.add("spring.cassandra.local-datacenter", () -> "datacenter1");
         registry.add("spring.cassandra.keyspace-name", () -> "test_keyspace");
+        registry.add("spring.cassandra.username", cassandra::getUsername);
+        registry.add("spring.cassandra.password", cassandra::getPassword);
+        registry.add("spring.cassandra.schema-action", () -> "CREATE_IF_NOT_EXISTS");
     }
 
     @Autowired
@@ -67,7 +72,6 @@ class EventServiceIntegrationTest {
 
     @Test
     void testSaveLargeBatch() {
-        // Arrange
         List<EventEntity> events = Arrays.asList(
                 createEvent("event-1", "device-1"),
                 createEvent("event-2", "device-1"),
@@ -76,11 +80,9 @@ class EventServiceIntegrationTest {
                 createEvent("event-5", "device-3")
         );
 
-        // Act
         List<EventEntity> savedEvents = eventService.saveAll(events);
         List<EventEntity> foundEvents = eventService.findAll();
 
-        // Assert
         assertEquals(5, savedEvents.size());
         assertEquals(5, foundEvents.size());
     }

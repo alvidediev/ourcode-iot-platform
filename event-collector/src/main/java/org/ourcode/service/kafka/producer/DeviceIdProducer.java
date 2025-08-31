@@ -17,15 +17,12 @@ public class DeviceIdProducer {
     private final OutBoxService outBoxService;
 
     public void sendProcessedDeviceIds() {
-
         CompletableFuture.runAsync(() -> {
             List<OutBoxEntity> allProcessed = outBoxService.findAllProcessed();
 
             allProcessed.stream().map(OutBoxEntity::getDeviceId)
                     .distinct()
-                    .forEach(deviceId -> {
-                        kafkaTemplate.send("device-ids", deviceId);
-                    });
+                    .forEach(deviceId -> kafkaTemplate.send("device-ids", deviceId));
         });
     }
 }

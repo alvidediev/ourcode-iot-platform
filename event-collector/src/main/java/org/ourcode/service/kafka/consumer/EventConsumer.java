@@ -1,55 +1,29 @@
 package org.ourcode.service.kafka.consumer;
 
 import avro.DeviceEvent;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.ourcode.model.EventEntity;
 import org.ourcode.model.OutBoxEntity;
 import org.ourcode.service.event.EventService;
 import org.ourcode.service.outbox.OutBoxService;
 import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class EventConsumer {
     private final EventService eventService;
     private final OutBoxService outBoxService;
 
-    //Кафка клиент для получения ивентов батчем
-    private final KafkaTemplate<String, DeviceEvent> kafkaTemplate;
-    //Кафка клиент для отправки DeviceId
-
-    //Кэш для дедупликации
-    private final Set<String> publishedDeviceIds = ConcurrentHashMap.newKeySet();
-
-    //Имитация работы TODO: удалить
-//    @PostConstruct
-//    public void init() {
-//        for (int i = 0; i < 1000; i++) {
-//            DeviceEvent event = new DeviceEvent();
-//            event.setEventId("event-" + i);
-//            event.setDeviceId("device-" + (i % 100));
-//            event.setTimestamp(System.currentTimeMillis());
-//            event.setType("temp");
-//            event.setPayload("{\"value\":" + new Random().nextInt(100) + "}");
-//
-//            kafkaTemplate.send("events.in", event.getDeviceId(), event);
-//        }
-//    }
-
     @KafkaListener(topics = "events.in", containerFactory = "batchListenerFactory")
     public void handleBatch(List<ConsumerRecord<String, DeviceEvent>> records) {
-        // 1. Сохраняем все события в Cassandra асинхронно
         List<EventEntity> events = records.stream()
                 .map(ConsumerRecord::value)
                 .map(this::getEventEntity)
@@ -68,22 +42,10 @@ public class EventConsumer {
                 throw new RuntimeException("Failed to save events", e);
             }
         }).exceptionally(ex -> {
-            System.err.println("Error saving events: " + ex.getMessage());
-            ex.printStackTrace();
-            return null; // Возвращаем null, так как Void
+            log.error("Error saving events {}: ", ex.getMessage());
+            return null;
         });
 
-//        // 2. Публикуем уникальные device_id
-//        CompletableFuture<Void> publishFuture = CompletableFuture.runAsync(() -> events.stream()
-//                .map(EventEntity::getDeviceId)
-//                .distinct()
-//                .filter(deviceId -> !publishedDeviceIds.contains(deviceId))
-//                .forEach(deviceId -> {
-//                    kafkaTemplateStr.send("device-ids", deviceId, deviceId);
-//                    publishedDeviceIds.add(deviceId);
-//                }));
-
-        // Ждём завершения обоих операций
         CompletableFuture.allOf(saveFuture).join();
     }
 

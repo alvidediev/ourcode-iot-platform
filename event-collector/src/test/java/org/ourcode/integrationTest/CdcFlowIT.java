@@ -1,4 +1,4 @@
-package org.ourcode.integration;
+package org.ourcode.integrationTest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -10,15 +10,16 @@ import org.ourcode.service.outbox.OutBoxService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.kafka.core.KafkaTemplate;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.context.TestPropertySource;
-import org.testcontainers.containers.KafkaContainer;
+import org.testcontainers.containers.CassandraContainer;
+import org.testcontainers.containers.Network;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.kafka.ConfluentKafkaContainer;
-import org.testcontainers.utility.DockerImageName;
 import org.testcontainers.utility.MountableFile;
 
 import java.util.concurrent.TimeUnit;
@@ -28,23 +29,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @SpringBootTest
 @Testcontainers
-@TestPropertySource(properties = {
-        "spring.kafka.producer.key-serializer=org.apache.kafka.common.serialization.StringSerializer",
-        "spring.kafka.producer.value-serializer=org.apache.kafka.common.serialization.StringSerializer"
-})
-class CdcFlowIntegrationTest {
+@ActiveProfiles("test")
+class CdcFlowIT {
+
+    private final static Network NETWORK = Network.newNetwork();
 
     @Container
-    static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer(
-            DockerImageName.parse("confluentinc/cp-kafka:7.6.1"));
+    public  static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.6.1")
+            .withExposedPorts(9092)
+            .withNetworkAliases("kafka")
+            .withEnv("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://kafka:9092")
+            .withNetworkAliases("kafka")
+            .waitingFor(Wait.forLogMessage(".*started.*", 1))
+            .withNetwork(NETWORK);
 
     @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+    public static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
+            .withExposedPorts(5432)
+            .withNetworkAliases("postgres")
             .withDatabaseName("testdb")
             .withUsername("test")
             .withPassword("test")
-            .withCopyFileToContainer(MountableFile.forClasspathResource("db/migration/V1__postgres_debezium_init_script.sql"),
-                    "/docker-entrypoint-initdb.d/init.sql");
+            .withCopyFileToContainer(
+                    MountableFile.forClasspathResource("db/migration/V1__postgres_debezium_init_script.sql"),
+                    "/docker-entrypoint-initdb.d/init.sql")
+            .withNetwork(NETWORK);
+
+    @Container
+    public   static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
+            .withExposedPorts(9042)
+            .withInitScript("init.cql")
+            .withNetwork(NETWORK);
 
     @DynamicPropertySource
     static void kafkaProperties(DynamicPropertyRegistry registry) {
@@ -52,6 +67,14 @@ class CdcFlowIntegrationTest {
         registry.add("spring.datasource.url", postgres::getJdbcUrl);
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
+
+        registry.add("spring.cassandra.contact-points",
+                () -> cassandra.getHost() + ":" + cassandra.getMappedPort(9042));
+        registry.add("spring.cassandra.local-datacenter", () -> "datacenter1");
+        registry.add("spring.cassandra.keyspace-name", () -> "test_keyspace");
+        registry.add("spring.cassandra.username", cassandra::getUsername);
+        registry.add("spring.cassandra.password", cassandra::getPassword);
+        registry.add("spring.cassandra.schema-action", () -> "CREATE_IF_NOT_EXISTS");
     }
 
     @Autowired
@@ -117,7 +140,7 @@ class CdcFlowIntegrationTest {
         );
 
         // Assert - проверяем, что CDC обработчик отметил событие как обработанное
-        await().atMost(30, TimeUnit.SECONDS).until(() ->
+        await().atMost(60, TimeUnit.SECONDS).until(() ->
                 outBoxService.findAllProcessed().stream()
                         .anyMatch(event -> event.getDeviceId().equals("cdc-test-device"))
         );

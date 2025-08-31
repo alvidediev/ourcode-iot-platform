@@ -1,0 +1,83 @@
+@startuml C4_Elements
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+!$ICONURL = "https://raw.githubusercontent.com/tupadr3/plantuml-icon-font-sprites/v3.0.0/icons"
+!include $ICONURL/devicons2/spring_original.puml
+!include $ICONURL/font-awesome-6/golang.puml
+!include $ICONURL/devicons2/redis.puml
+!include $ICONURL/font-awesome-6/key.puml
+!include $ICONURL/devicons2/apachekafka_original.puml
+!include $ICONURL/font-awesome-6/robot.puml
+!include $ICONURL/devicons/postgresql.puml
+!include $ICONURL/devicons2/cassandra.puml
+!include $ICONURL/font-awesome-6/server.puml
+!include $ICONURL/devicons2/prometheus_original.puml
+!include $ICONURL/font-awesome-6/computer.puml
+!include $ICONURL/devicons2/grafana.puml
+
+Container_Boundary(iot-devices, IoT) {
+    Boundary(microservices, "Events Collector") {
+        Container(kafka_service, "KafkaService", "Spring Boot", "Чтение событий из\nтопика events.in", $sprite=spring_original)
+        Container(springs_actuator, "Spring Actuator", "Spring Boot", "Логи, метрики, трейсы", $sprite=spring_original)
+        Container(events_service, "Events Service", "Spring Boot", "Отправка Events в Cassandra", $sprite=spring_original)
+        Container(outbox_service, "Outbox Service", "Spring Boot", "Отправка OutboxEventx\nв Postgres", $sprite=spring_original)
+        Container(cdc_service, "Cdc Service", "Spring Boot", "Получение сообщений из\nтопика outbox_events", $sprite=spring_original)
+    }
+    Boundary(observability, "Observability") {
+        Container_Ext(node_exporter, "Node exporter", "Агент сбора метрик ОС", "CPU / RAM / SWAP / etc", $sprite=computer)
+        Container_Ext(postgresql_exporter, "PostgreSQL exporter", "Агент сбора метрик PostgreSQL", "Количество активных соединений / использование памяти / время выполнения запросов / etc", $sprite=computer)
+        Container_Ext(kafka_exporter, "Kafka exporter", "Агент сбора метрик Kafka", "Загрузку брокеров / Производительность / Состояние потребителей / Состояние топиков / etc", $sprite=computer)
+
+        Container_Ext(prometheus, "Prometheus", "Система мониторинга", "Сбор метрик", $sprite = prometheus_original)
+        Container_Ext(loki, "Loki", "Система сбора логов", "Сбор, индексация, хранение логов", $sprite = computer)
+        Container_Ext(tempo, "Tempo", "Система мониторинга", "Хранение и анализ трейсов", $sprite = computer)
+        Container_Ext(alloy, "Alloy", "Универсальный агент", "Обработка и передача трейсов", $sprite = computer)
+        Container_Ext(grafana, "Grafana", "Визуализация мониторинга", "Анализ и визуализация мониторинга", $sprite = grafana)
+    }
+
+    Boundary(ext_containers, "System Ext") {
+        Container_Ext(kafka, "Kafka", "Kafka", "events / dlt / device-id / топики", $sprite=apachekafka_original)
+
+        Container_Ext(postgre_devices, "PostgreSQL (Devices)", "Реляционная бд", "Шардирование база данных устройств. Синхронная репликация каждого шарда.", $sprite=postgresql)
+        Container_Ext(cassandra, "Cassandra", "NoSQL", "Хранение событий", $sprite=cassandra)
+        Container_Ext(debezium, "Debezium", "Реализация паттерна outbox", "Отправка событий в топик boutbox-events", $sprite=apachekafka_original)
+    }
+}
+
+Container_Ext(iot, "IoT Devices", "Встраиваемые устройства", "Отправляют телеметрию и получаются комангды", $sprite=robot)
+
+Rel(iot, kafka, "Отправка events в топик events.in")
+
+Rel(kafka_service, kafka, "Батчевое получение телеметрии")
+Rel(kafka_service, events_service, "Отправка сообщений\nв сервис по отправке\nв Cassandra")
+Rel(kafka_service, outbox_service, "Отправка сообщений\nв сервис по отправке\nв Postgres")
+Rel(outbox_service, postgre_devices, "Отправка сообщений\nв сервис по отправке\nв Postgres для\nреализации паттерна Outbox")
+Rel(events_service, cassandra, "Батчевое сохранение", "HTTP")
+Rel(debezium, postgre_devices, "Отслеживание изменений таблицы outbox_events", "HTTP")
+Rel(debezium, kafka, "Отправка изменений в топик outbox_events", "HTTP")
+Rel(kafka_service, kafka, "Получение сообщений из топика outbox_events", "HTTP")
+Rel(kafka_service, outbox_service, "Помечаем сообщение\nкак потребленное\nisProcessed=true")
+Rel(kafka_service, outbox_service, "Помечаем сообщение\nкак потребленное\nisProcessed=true")
+Rel(outbox_service, postgre_devices, "Отправка сообщений с пометкой\nisProcessed=true\nдля пометки\nчто все сообщения потреблены")
+Rel(kafka_service, kafka, "Отправка уникальных device-ids\nв топик device-ids")
+
+
+
+
+
+
+
+
+
+Rel(prometheus, node_exporter, "")
+Rel(prometheus, postgresql_exporter, "")
+Rel(prometheus, kafka_exporter, "")
+Rel(grafana, prometheus, "")
+Rel(alloy, tempo, "")
+Rel(grafana, tempo, "")
+Rel(grafana, loki, "")
+
+
+
+Rel(observability, springs_actuator, "Получение метрик, логов, трейсов")
+Rel(observability, ext_containers, "Получение метрик, логов, трейсов")
+@enduml

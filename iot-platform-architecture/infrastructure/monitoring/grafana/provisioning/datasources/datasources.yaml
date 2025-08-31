@@ -14,5 +14,17 @@ datasources:
 
   - name: Tempo
     type: tempo
-    access: proxy
     url: http://tempo:3200
+    access: proxy
+    jsonData:
+      tracesToLogs:
+        datasourceUid: loki
+        spanStartTimeShift: "1h"
+        spanEndTimeShift: "1h"
+        tags: [ "job", "instance" ]
+        mappedTags:
+          - key: "service.name"
+            value: "application"
+      tracesToMetrics:
+        datasourceUid: prometheus
+        tags: [ "application" ]

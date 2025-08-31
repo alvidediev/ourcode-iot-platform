@@ -1,12 +1,10 @@
 package org.ourcode.service.kafka.consumer;
 
-import avro.DeviceEvent;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
-import org.ourcode.model.OutBoxEntity;
 import org.ourcode.model.dto.OutBoxDto;
 import org.ourcode.service.kafka.producer.DeviceIdProducer;
 import org.ourcode.service.outbox.OutBoxService;
@@ -24,15 +22,14 @@ public class CdcEventConsumer {
 
     @KafkaListener(
             topics = "ourcode.public.outbox_events",
-            containerFactory = "cdcListenerFactory", // Нужно создать специальный factory
+            containerFactory = "cdcListenerFactory",
             groupId = "cdc-group"
     )
     public void handleCdcEvents(List<ConsumerRecord<String, String>> records) {
         records.forEach(record -> {
-            String value = record.value();
             try {
                 JsonNode root = objectMapper.readTree(record.value());
-                JsonNode after = root.get("after"); // <-- берем "после"
+                JsonNode after = root.get("after");
                 if (after != null && !after.isNull()) {
                     OutBoxDto deviceEvent = objectMapper.treeToValue(after, OutBoxDto.class);
                     outBoxService.markAsProcessed(deviceEvent.getDeviceId());
@@ -40,9 +37,6 @@ public class CdcEventConsumer {
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
-
-
-
         });
         deviceIdProducer.sendProcessedDeviceIds();
     }

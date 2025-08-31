@@ -1,8 +1,12 @@
+
+
 spring:
+  main:
+    web-application-type: servlet
   application:
     name: event-collector
   kafka:
-    bootstrap-servers: localhost:29092
+    bootstrap-servers: kafka:9092
     listener:
       ack-mode: batch
     consumer:
@@ -13,23 +17,23 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: io.confluent.kafka.serializers.KafkaAvroDeserializer
       properties:
-        schema.registry.url: http://localhost:8081
+        schema.registry.url: http://schema-registry:8081
         specific.avro.reader: true
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
       properties:
-        schema.registry.url: http://localhost:8081
+        schema.registry.url: http://schema-registry:8081
         acks: all
         enable.idempotence: true
   flyway:
     password: postgres
-    url: jdbc:postgresql://localhost:5432/ourcode
+    url: jdbc:postgresql://postgres:5432/ourcode
     user: postgres
-    enabled: false
+    enabled: true
     baseline-on-migrate: true
   cassandra:
-    contact-points: localhost
+    contact-points: cassandra
     port: 9042
     keyspace-name: event_keyspace
     local-datacenter: datacenter1
@@ -39,4 +43,25 @@ spring:
   datasource:
     username: postgres
     password: postgres
-    url: jdbc:postgresql://localhost:5432/ourcode
+    url: jdbc:postgresql://postgres:5432/ourcode
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus, loggers
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+      sampling:
+        probability: 1.0  # для dev — все запросы трейсим
+  otlp:
+    tracing:
+      endpoint: http://alloy:4318/v1/traces
+server:
+  port: 10000
+  address: 0.0.0.0

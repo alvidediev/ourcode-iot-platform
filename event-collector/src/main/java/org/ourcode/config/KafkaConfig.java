@@ -7,7 +7,6 @@ import org.apache.kafka.common.serialization.StringDeserializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.cassandra.core.CassandraTemplate;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.core.DefaultKafkaConsumerFactory;
@@ -21,18 +20,20 @@ public class KafkaConfig {
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
-    // Consumer для батчевой обработки
+    @Value("${spring.kafka.consumer.properties.schema.registry.url}")
+    private String schemaRegistryUrl;
+
     @Bean
     public ConsumerFactory<String, DeviceEvent> batchConsumerFactory() {
         Map<String, Object> props = new HashMap<>();
         props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers);
         props.put(ConsumerConfig.GROUP_ID_CONFIG, "batch-group");
-        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100); // Размер батча
+        props.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100);
         props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ErrorHandlingDeserializer.class);
         props.put(ErrorHandlingDeserializer.VALUE_DESERIALIZER_CLASS, KafkaAvroDeserializer.class);
         props.put("specific.avro.reader", true);
-        props.put("schema.registry.url", "http://localhost:8081");
+        props.put("schema.registry.url", schemaRegistryUrl);
         return new DefaultKafkaConsumerFactory<>(props);
     }
 
@@ -40,8 +41,8 @@ public class KafkaConfig {
     public ConcurrentKafkaListenerContainerFactory<String, DeviceEvent> batchListenerFactory() {
         ConcurrentKafkaListenerContainerFactory<String, DeviceEvent> factory = new ConcurrentKafkaListenerContainerFactory<>();
         factory.setConsumerFactory(batchConsumerFactory());
-        factory.setBatchListener(true); // Включаем batch-режим
-        factory.setConcurrency(3); // 3 потока обработки
+        factory.setBatchListener(true);
+        factory.setConcurrency(3);
         return factory;
     }
 

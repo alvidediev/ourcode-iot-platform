@@ -1,0 +1,33 @@
+@startuml
+
+actor IOT_Devices
+participant "Kafka Topic: events.in" as KTI
+participant EventConsumer
+database Cassandra
+database PostgreSQL
+participant Debezium
+participant "Kafka Topic: ourcode.public.outbox_events" as KTO
+participant "Kafka Topic: device-ids" as KTD
+
+IOT_Devices -> KTI: send telemetry
+KTI -> EventConsumer: handle(List<ConsumerRecord>)
+activate EventConsumer
+EventConsumer -> Cassandra: saveAll(events)
+activate Cassandra
+Cassandra --> EventConsumer
+deactivate Cassandra
+EventConsumer -> PostgreSQL: saveAll(ouboxEvent)\nOutboxPattern
+activate PostgreSQL
+EventConsumer <-- PostgreSQL
+Debezium --> PostgreSQL:
+activate Debezium
+PostgreSQL --> Debezium: outbox entity with\nflag of consumption
+deactivate PostgreSQL
+Debezium --> KTO: send event to Outbox topic
+deactivate Debezium
+activate KTO
+EventConsumer <-- KTO: handle(List<ConsumerRecord>)
+deactivate KTO
+EventConsumer --> KTD: send unique device-ids
+deactivate EventConsumer
+@enduml

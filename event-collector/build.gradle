@@ -16,10 +16,21 @@ java {
 	}
 }
 
+sourceSets {
+	integrationTest {
+		java.srcDir file('src/test/java/')
+		resources.srcDir file('src/test/resources')
+		compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+		runtimeClasspath += output + compileClasspath
+	}
+}
+
 configurations {
 	compileOnly {
 		extendsFrom annotationProcessor
 	}
+	integrationTestImplementation.extendsFrom testImplementation
+	integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
 }
 
 repositories {
@@ -30,7 +41,7 @@ repositories {
 }
 
 dependencies {
-	// https://mvnrepository.com/artifact/org.flywaydb/flyway-gradle-plugin
+	implementation 'org.springframework.boot:spring-boot-starter-web'
 	runtimeOnly 'org.flywaydb:flyway-gradle-plugin:11.11.1'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-cassandra'
@@ -52,14 +63,48 @@ dependencies {
 	implementation 'io.confluent:kafka-avro-serializer:7.5.3'
 	implementation 'io.confluent:kafka-schema-registry-client:7.5.3'
 	implementation 'org.flywaydb:flyway-database-postgresql'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+
+	// Метрики → Prometheus
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+
+	// Трейсинг → Tempo (через OpenTelemetry)
+	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+	implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
 }
 
 avro {
 
 }
 
-
-
 tasks.named('test') {
 	useJUnitPlatform()
+	include '**/*Test.class'
+	exclude '**/*IT.class'
+	exclude '**/*IntegrationTest.class'
 }
+
+tasks.register('integrationTest', Test) {
+	description = "Runs integration tests."
+	group = "verification"
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	include '**/*IT.class'
+	include '**/*IntegrationTest.class'
+	exclude '**/*Test.class'
+}
+
+tasks.register('allTests') {
+	description = "Runs both unit and integration tests."
+	group = "verification"
+	dependsOn test, integrationTest
+}
+
+tasks.named('bootJar') {
+	enabled = true
+}
+tasks.named('jar') {
+	enabled = false
+}
+
