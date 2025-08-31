@@ -12,17 +12,9 @@ import java.util.concurrent.CompletableFuture;
 @Service
 @RequiredArgsConstructor
 public class DeviceIdProducer {
-
     private final KafkaTemplate<String, String> kafkaTemplate;
-    private final OutBoxService outBoxService;
 
-    public void sendProcessedDeviceIds() {
-        CompletableFuture.runAsync(() -> {
-            List<OutBoxEntity> allProcessed = outBoxService.findAllProcessed();
-
-            allProcessed.stream().map(OutBoxEntity::getDeviceId)
-                    .distinct()
-                    .forEach(deviceId -> kafkaTemplate.send("device-ids", deviceId));
-        });
+    public void sendProcessedDeviceIds(List<String>  deviceIds) {
+        CompletableFuture.runAsync(() -> deviceIds.forEach(deviceId -> kafkaTemplate.send("device-ids", deviceId)));
     }
 }

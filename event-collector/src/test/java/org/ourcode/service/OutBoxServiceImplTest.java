@@ -6,6 +6,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.ourcode.model.OutBoxEntity;
+import org.ourcode.model.dto.OutBoxDto;
 import org.ourcode.repository.OutBoxRepository;
 import org.ourcode.service.outbox.impl.OutBoxServiceImpl;
 
@@ -63,22 +64,36 @@ class OutBoxServiceImplTest {
     void testMarkAsProcessed() {
         String deviceId = "device-1";
 
-        List<OutBoxEntity> entities = Arrays.asList(
+        List<OutBoxEntity> entities = List.of(
                 createOutBoxEntity("event-1", deviceId, false),
                 createOutBoxEntity("event-2", deviceId, false)
         );
 
-        when(outBoxRepository.findAllByDeviceId(deviceId)).thenReturn(entities);
-        when(outBoxRepository.save(any(OutBoxEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(outBoxRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
 
-        outBoxService.markAsProcessed(deviceId);
+        List<OutBoxDto> dtos = List.of(
+                createOutBoxDto("event-1", deviceId, false),
+                createOutBoxDto("event-2", deviceId, false)
+        );
 
-        verify(outBoxRepository, times(1)).findAllByDeviceId(deviceId);
-        verify(outBoxRepository, times(2)).save(any(OutBoxEntity.class));
+        outBoxService.markAsProcessed(dtos);
+
+        verify(outBoxRepository, times(1)).saveAll(anyList());
     }
 
     private OutBoxEntity createOutBoxEntity(String eventId, String deviceId, boolean processed) {
         OutBoxEntity entity = new OutBoxEntity();
+        entity.setEventId(eventId);
+        entity.setDeviceId(deviceId);
+        entity.setTimestamp(System.currentTimeMillis());
+        entity.setType("temperature");
+        entity.setPayload("{\"value\": 25}");
+        entity.setProcessed(processed);
+        return entity;
+    }
+
+    private OutBoxDto createOutBoxDto(String eventId, String deviceId, boolean processed) {
+        OutBoxDto entity = new OutBoxDto();
         entity.setEventId(eventId);
         entity.setDeviceId(deviceId);
         entity.setTimestamp(System.currentTimeMillis());

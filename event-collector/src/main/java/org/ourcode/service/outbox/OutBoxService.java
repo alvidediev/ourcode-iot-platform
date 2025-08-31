@@ -1,6 +1,7 @@
 package org.ourcode.service.outbox;
 
 import org.ourcode.model.OutBoxEntity;
+import org.ourcode.model.dto.OutBoxDto;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -13,5 +14,5 @@ public interface OutBoxService {
 
     List<OutBoxEntity> findAllProcessed();
 
-    void markAsProcessed(String deviceId);
+    void markAsProcessed(List<OutBoxDto> listOfOutbox);
 }

@@ -11,6 +11,7 @@ import org.ourcode.service.outbox.OutBoxService;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -26,18 +27,27 @@ public class CdcEventConsumer {
             groupId = "cdc-group"
     )
     public void handleCdcEvents(List<ConsumerRecord<String, String>> records) {
+        List<OutBoxDto> outBoxDtos = new ArrayList<>();
         records.forEach(record -> {
             try {
                 JsonNode root = objectMapper.readTree(record.value());
                 JsonNode after = root.get("after");
                 if (after != null && !after.isNull()) {
-                    OutBoxDto deviceEvent = objectMapper.treeToValue(after, OutBoxDto.class);
-                    outBoxService.markAsProcessed(deviceEvent.getDeviceId());
+                    outBoxDtos.add(objectMapper.treeToValue(after, OutBoxDto.class));
                 }
             } catch (JsonProcessingException e) {
                 throw new RuntimeException(e);
             }
         });
-        deviceIdProducer.sendProcessedDeviceIds();
+
+        if (!outBoxDtos.isEmpty()) {
+            List<String> listOfDeviceIds = outBoxDtos.stream()
+                    .map(OutBoxDto::getDeviceId)
+                    .distinct()
+                    .toList();
+
+            deviceIdProducer.sendProcessedDeviceIds(listOfDeviceIds);
+            outBoxService.markAsProcessed(outBoxDtos);
+        }
     }
 }

@@ -2,9 +2,11 @@ package org.ourcode.integrationTest;
 
 import org.junit.jupiter.api.Test;
 import org.ourcode.model.OutBoxEntity;
+import org.ourcode.model.dto.OutBoxDto;
 import org.ourcode.service.outbox.OutBoxService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.CassandraContainer;
@@ -24,6 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
 @Testcontainers
+@ActiveProfiles("test")
 class OutBoxServiceIT {
 
     private final static Network NETWORK = Network.newNetwork();
@@ -113,7 +116,15 @@ class OutBoxServiceIT {
         List<OutBoxEntity> unprocessed = outBoxService.findAllUnprocessed();
         assertThat(unprocessed).hasSize(1);
 
-        outBoxService.markAsProcessed("device-1");
+        OutBoxDto outBoxDto = new OutBoxDto();
+        outBoxDto.setEventId("event-123");
+        outBoxDto.setDeviceId("device-1");
+        outBoxDto.setTimestamp(System.currentTimeMillis());
+        outBoxDto.setType("temperature");
+        outBoxDto.setPayload("{\"value\":42}");
+        outBoxDto.setProcessed(false);
+
+        outBoxService.markAsProcessed(List.of(outBoxDto));
 
         List<OutBoxEntity> processed = outBoxService.findAllProcessed();
         assertThat(processed).hasSize(1);

@@ -11,13 +11,13 @@
 * `command-service` — принимает команды по gRPC и отдается их устройствам. Работает с отдельной БД PostgreSQL
 * `device-service` — CRUD API по устройствам
 * `events-service` — чтение событиый из Cassandra
-* `events-collector-service` — Kafka -> Cassandra + device-id
 * `device-service` — Получает device_id сохраняется в PostgreSQL
 * `failed-events-service` — DLT -> JSON в MinIO
 
 Готовое:
 
 * `monitoring` — инфраструктура мониторинга и трассировки: Grafana, Prometheus, Loki, Tempo, Alloy
+* [Events-collector](../../event-collector/README.md) — Kafka -> Cassandra + device-id
 
 Диаграммы:
 
@@ -60,13 +60,14 @@ make help
 * Camunda (`localhost:8088`)
 * Cassandra (`localhost:9042`)
 * MinIO (`localhost:9001`, логин: miniouser/miniopassword)
+* events-collector (`localhost:9050`)
 
 ## Структура проекта
 
 ```
 ourcode-iot-platform/
 │
-├── Microservices (Will be upgraded soon)
+├── events-collector
 │  
 ├── iot-platform-architecture/     (диаграммы архитектуры)
 │   ├── infrastructure
