@@ -6,54 +6,81 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.ourcode.model.EventEntity;
-import org.ourcode.repository.EventRepository;
 import org.ourcode.service.event.impl.EventServiceImpl;
+import org.springframework.data.cassandra.core.CassandraBatchOperations;
+import org.springframework.data.cassandra.core.CassandraTemplate;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
-public class EventServiceImplTest {
+class EventServiceImplTest {
+
     @Mock
-    private EventRepository eventRepository;
+    private CassandraTemplate cassandraTemplate;
 
     @InjectMocks
     private EventServiceImpl eventService;
 
     @Test
-    void testSaveAll() {
-        List<EventEntity> events = Arrays.asList(
-                createEvent("event-1", "device-1"),
-                createEvent("event-2", "device-2")
-        );
+    void testSaveAll_EmptyList() {
+        List<EventEntity> result = eventService.saveAll(Collections.emptyList());
 
-        when(eventRepository.saveAll(anyList())).thenReturn(events);
-
-        List<EventEntity> result = eventService.saveAll(events);
-
-        assertNotNull(result);
-        assertEquals(2, result.size());
-        verify(eventRepository, times(1)).saveAll(events);
+        assertTrue(result.isEmpty());
+        verifyNoInteractions(cassandraTemplate);
     }
 
     @Test
-    void testFindAll() {
+    void testSaveAll_SmallBatch() {
         List<EventEntity> events = Arrays.asList(
                 createEvent("event-1", "device-1"),
                 createEvent("event-2", "device-2")
         );
 
-        when(eventRepository.findAll()).thenReturn(events);
+        when(cassandraTemplate.batchOps()).thenReturn(mock(CassandraBatchOperations.class));
 
-        List<EventEntity> result = eventService.findAll();
+        List<EventEntity> result = eventService.saveAll(events);
 
-        assertNotNull(result);
         assertEquals(2, result.size());
-        verify(eventRepository, times(1)).findAll();
+        verify(cassandraTemplate, times(1)).batchOps();
+    }
+
+    @Test
+    void testSaveAll_LargeBatch() {
+        List<EventEntity> events = new ArrayList<>();
+        for (int i = 0; i < 45; i++) {
+            events.add(createEvent("event-" + i, "device-" + (i % 10)));
+        }
+
+        when(cassandraTemplate.batchOps()).thenReturn(mock(CassandraBatchOperations.class));
+
+        List<EventEntity> result = eventService.saveAll(events);
+
+        assertEquals(45, result.size());
+        verify(cassandraTemplate, times(3)).batchOps();
+    }
+
+    @Test
+    void testSaveAll_WithBatchOperationsMock() {
+        List<EventEntity> events = Arrays.asList(
+                createEvent("event-1", "device-1"),
+                createEvent("event-2", "device-2")
+        );
+
+        CassandraBatchOperations batchOps = mock(CassandraBatchOperations.class);
+        when(cassandraTemplate.batchOps()).thenReturn(batchOps);
+        when(batchOps.execute()).thenReturn(null);
+
+        List<EventEntity> result = eventService.saveAll(events);
+
+        assertEquals(2, result.size());
+        verify(batchOps, times(2)).insert(any(EventEntity.class));
+        verify(batchOps, times(1)).execute();
     }
 
     private EventEntity createEvent(String eventId, String deviceId) {
@@ -62,7 +89,7 @@ public class EventServiceImplTest {
         event.setDeviceId(deviceId);
         event.setTimestamp(System.currentTimeMillis());
         event.setType("temperature");
-        event.setPayload("{\"value\": 25}");
+        event.setPayload("{\"value\":25}");
         return event;
     }
 }

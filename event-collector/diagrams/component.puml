@@ -19,8 +19,6 @@ Container_Boundary(iot-devices, IoT) {
         Container(kafka_service, "KafkaService", "Spring Boot", "Чтение событий из\nтопика events.in", $sprite=spring_original)
         Container(springs_actuator, "Spring Actuator", "Spring Boot", "Логи, метрики, трейсы", $sprite=spring_original)
         Container(events_service, "Events Service", "Spring Boot", "Отправка Events в Cassandra", $sprite=spring_original)
-        Container(outbox_service, "Outbox Service", "Spring Boot", "Отправка OutboxEventx\nв Postgres", $sprite=spring_original)
-        Container(cdc_service, "Cdc Service", "Spring Boot", "Получение сообщений из\nтопика outbox_events", $sprite=spring_original)
     }
     Boundary(observability, "Observability") {
         Container_Ext(node_exporter, "Node exporter", "Агент сбора метрик ОС", "CPU / RAM / SWAP / etc", $sprite=computer)
@@ -39,7 +37,6 @@ Container_Boundary(iot-devices, IoT) {
 
         Container_Ext(postgre_devices, "PostgreSQL (Devices)", "Реляционная бд", "Шардирование база данных устройств. Синхронная репликация каждого шарда.", $sprite=postgresql)
         Container_Ext(cassandra, "Cassandra", "NoSQL", "Хранение событий", $sprite=cassandra)
-        Container_Ext(debezium, "Debezium", "Реализация паттерна outbox", "Отправка событий в топик boutbox-events", $sprite=apachekafka_original)
     }
 }
 
@@ -49,15 +46,8 @@ Rel(iot, kafka, "Отправка events в топик events.in")
 
 Rel(kafka_service, kafka, "Батчевое получение телеметрии")
 Rel(kafka_service, events_service, "Отправка сообщений\nв сервис по отправке\nв Cassandra")
-Rel(kafka_service, outbox_service, "Отправка сообщений\nв сервис по отправке\nв Postgres")
-Rel(outbox_service, postgre_devices, "Отправка сообщений\nв сервис по отправке\nв Postgres для\nреализации паттерна Outbox")
 Rel(events_service, cassandra, "Батчевое сохранение", "HTTP")
-Rel(debezium, postgre_devices, "Отслеживание изменений таблицы outbox_events", "HTTP")
-Rel(debezium, kafka, "Отправка изменений в топик outbox_events", "HTTP")
 Rel(kafka_service, kafka, "Получение сообщений из топика outbox_events", "HTTP")
-Rel(kafka_service, outbox_service, "Помечаем сообщение\nкак потребленное\nisProcessed=true")
-Rel(kafka_service, outbox_service, "Помечаем сообщение\nкак потребленное\nisProcessed=true")
-Rel(outbox_service, postgre_devices, "Отправка сообщений с пометкой\nisProcessed=true\nдля пометки\nчто все сообщения потреблены")
 Rel(kafka_service, kafka, "Отправка уникальных device-ids\nв топик device-ids")
 
 

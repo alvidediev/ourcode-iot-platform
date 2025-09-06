@@ -4,15 +4,19 @@ import avro.DeviceEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.ourcode.mapper.EventMapper;
 import org.ourcode.model.EventEntity;
-import org.ourcode.model.OutBoxEntity;
 import org.ourcode.service.event.EventService;
-import org.ourcode.service.outbox.OutBoxService;
+import org.ourcode.service.kafka.producer.DeviceIdProducer;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,51 +24,27 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class EventConsumer {
     private final EventService eventService;
-    private final OutBoxService outBoxService;
+    private final DeviceIdProducer deviceIdProducer;
+    private final EventMapper eventMapper;
+    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
 
     @KafkaListener(topics = "events.in", containerFactory = "batchListenerFactory")
-    public void handleBatch(List<ConsumerRecord<String, DeviceEvent>> records) {
+    public void handleBatch(List<ConsumerRecord<String, DeviceEvent>> records, Acknowledgment ack) {
         List<EventEntity> events = records.stream()
                 .map(ConsumerRecord::value)
-                .map(this::getEventEntity)
+                .map(eventMapper::deviceEventToEntity)
                 .collect(Collectors.toList());
 
-        List<OutBoxEntity> collect = records.stream()
-                .map(ConsumerRecord::value)
-                .map(this::getOutBoxEntity)
-                .toList();
-
-        CompletableFuture<Void> saveFuture = CompletableFuture.runAsync(() -> {
-            try {
-                eventService.saveAll(events);
-                outBoxService.saveAll(collect);
-            } catch (Exception e) {
-                throw new RuntimeException("Failed to save events", e);
+        CompletableFuture.runAsync(() -> eventService.saveAll(events), executorService).whenComplete((res, ex) -> {
+            if (ex == null) {
+                ack.acknowledge();
+                Set<String> uniqueDeviceIds = events.stream()
+                        .map(EventEntity::getDeviceId)
+                        .collect(Collectors.toSet());
+                deviceIdProducer.sendProcessedDeviceIds(uniqueDeviceIds);
+            } else {
+                log.error("Error saving events: ", ex);
             }
-        }).exceptionally(ex -> {
-            log.error("Error saving events {}: ", ex.getMessage());
-            return null;
         });
-
-        CompletableFuture.allOf(saveFuture).join();
-    }
-
-    private EventEntity getEventEntity(DeviceEvent s) {
-        EventEntity eventEntity = new EventEntity();
-        eventEntity.setEventId(s.getEventId());
-        eventEntity.setDeviceId(s.getDeviceId());
-        eventEntity.setTimestamp(s.getTimestamp());
-        eventEntity.setPayload(s.getPayload());
-        return eventEntity;
-    }
-
-    private OutBoxEntity  getOutBoxEntity(DeviceEvent s) {
-        OutBoxEntity outBoxEntity = new OutBoxEntity();
-        outBoxEntity.setEventId(s.getEventId());
-        outBoxEntity.setDeviceId(s.getDeviceId());
-        outBoxEntity.setTimestamp(s.getTimestamp());
-        outBoxEntity.setPayload(s.getPayload());
-        outBoxEntity.setProcessed(false);
-        return outBoxEntity;
     }
 }

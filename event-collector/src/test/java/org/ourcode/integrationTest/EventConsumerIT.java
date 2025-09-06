@@ -2,101 +2,26 @@ package org.ourcode.integrationTest;
 
 import avro.DeviceEvent;
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.ourcode.config.TestContainersConfiguration;
+import org.ourcode.model.EventEntity;
 import org.ourcode.service.event.EventService;
-import org.ourcode.service.outbox.OutBoxService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.data.cassandra.core.CassandraOperations;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.CassandraContainer;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.Network;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.kafka.ConfluentKafkaContainer;
-import org.testcontainers.utility.DockerImageName;
-import org.testcontainers.utility.MountableFile;
 
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
-@Testcontainers
 @ActiveProfiles("test")
-public class EventConsumerIT {
-    private final static Network NETWORK = Network.newNetwork();
-    @Container
-    public static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:15-alpine")
-            .withExposedPorts(5432)
-            .withNetworkAliases("postgres")
-            .withDatabaseName("testdb")
-            .withUsername("test")
-            .withPassword("test")
-            .withCopyFileToContainer(
-                    MountableFile.forClasspathResource("db/migration/V1__postgres_debezium_init_script.sql"),
-                    "/docker-entrypoint-initdb.d/init.sql")
-            .withNetwork(NETWORK);
-
-    @Container
-    public static ConfluentKafkaContainer kafka = new ConfluentKafkaContainer("confluentinc/cp-kafka:7.6.1")
-            .withExposedPorts(9092)
-            .withNetworkAliases("kafka")
-            .withEnv("KAFKA_ADVERTISED_LISTENERS", "PLAINTEXT://kafka:9092")
-            .waitingFor(Wait.forLogMessage(".*started.*", 1))
-            .withNetwork(NETWORK);
-
-    @Container
-    public static CassandraContainer<?> cassandra = new CassandraContainer<>("cassandra:4.1")
-            .withExposedPorts(9042)
-            .withInitScript("init.cql")
-            .withNetwork(NETWORK);
-
-    @Container
-    public static GenericContainer<?> schemaRegistry =
-            new GenericContainer<>(DockerImageName.parse("confluentinc/cp-schema-registry:7.6.1"))
-                    .withExposedPorts(8081)
-                    .withEnv("SCHEMA_REGISTRY_HOST_NAME", "schema-registry")
-                    .withEnv("SCHEMA_REGISTRY_KAFKASTORE_BOOTSTRAP_SERVERS", "PLAINTEXT://kafka:9092")
-                    .withEnv("SCHEMA_REGISTRY_LISTENERS", "http://0.0.0.0:8081")
-                    .dependsOn(kafka)
-                    .withNetwork(NETWORK);
-
-    @DynamicPropertySource
-    static void kafkaProperties(DynamicPropertyRegistry registry) {
-        //Postgres
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("spring.datasource.driver-class-name", postgres::getDriverClassName);
-        //Cassandra
-        registry.add("spring.cassandra.contact-points",
-                () -> cassandra.getHost() + ":" + cassandra.getMappedPort(9042));
-        registry.add("spring.cassandra.local-datacenter", () -> "datacenter1");
-        registry.add("spring.cassandra.keyspace-name", () -> "test_keyspace");
-        registry.add("spring.cassandra.username", cassandra::getUsername);
-        registry.add("spring.cassandra.password", cassandra::getPassword);
-        registry.add("spring.cassandra.schema-action", () -> "CREATE_IF_NOT_EXISTS");
-        //Kafka
-        registry.add("spring.kafka.bootstrap-servers", kafka::getBootstrapServers);
-        registry.add("spring.kafka.producer.key-serializer", () -> "org.apache.kafka.common.serialization.StringSerializer");
-        registry.add("spring.kafka.producer.value-serializer", () -> "io.confluent.kafka.serializers.KafkaAvroSerializer");
-        //SchemaRegistry
-        registry.add("spring.kafka.properties.schema.registry.url", () ->
-                "http://" + schemaRegistry.getHost() + ":" + schemaRegistry.getMappedPort(8081));
-        // JPA
-        registry.add("spring.jpa.properties.hibernate.dialect",
-                () -> "org.hibernate.dialect.PostgreSQLDialect");
-        registry.add("spring.jpa.hibernate.ddl-auto", () -> "create-drop");
-        registry.add("spring.jpa.show-sql", () -> "true");
-        registry.add("spring.jpa.properties.hibernate.format_sql", () -> "true");
-    }
+public class EventConsumerIT extends TestContainersConfiguration {
 
     @Autowired
     private KafkaTemplate<String, DeviceEvent> kafkaTemplate;
@@ -105,10 +30,15 @@ public class EventConsumerIT {
     private EventService eventService;
 
     @Autowired
-    private OutBoxService outBoxService;
+    private CassandraOperations cassandraOperations;
+
+    @BeforeEach
+    void setUp() {
+        cassandraOperations.truncate(EventEntity.class);
+    }
 
     @Test
-    void testEventConsumptionAndProcessing() {
+    void testSingleEventConsumptionAndProcessing() {
         DeviceEvent event = DeviceEvent.newBuilder()
                 .setEventId("test-event-1")
                 .setDeviceId("test-device-1")
@@ -119,9 +49,140 @@ public class EventConsumerIT {
 
         kafkaTemplate.send(new ProducerRecord<>("events.in", event.getDeviceId(), event));
 
-        await().atMost(30, TimeUnit.SECONDS).until(() ->
-                !outBoxService.findAllUnprocessed().isEmpty());
+        await().atMost(30, TimeUnit.SECONDS).until(() -> {
+            EventEntity savedEvent = eventService.findByEventId(event.getEventId());
+            return savedEvent != null &&
+                    savedEvent.getDeviceId().equals(event.getDeviceId()) &&
+                    savedEvent.getPayload().equals(event.getPayload());
+        });
 
-        assertTrue(true, "Event should be processed within timeout");
+        EventEntity savedEvent = eventService.findByEventId(event.getEventId());
+        assertNotNull(savedEvent, "Event should be saved to Cassandra");
+        assertEquals(event.getDeviceId(), savedEvent.getDeviceId());
+        assertEquals(event.getPayload(), savedEvent.getPayload());
+        assertEquals(event.getTimestamp(), savedEvent.getTimestamp());
+    }
+
+    @Test
+    void testBatchEventConsumption() {
+        for (int i = 1; i <= 5; i++) {
+            DeviceEvent event = DeviceEvent.newBuilder()
+                    .setEventId("batch-event-" + i)
+                    .setDeviceId("batch-device-" + (i % 2 + 1))
+                    .setTimestamp(System.currentTimeMillis() + i)
+                    .setType("temperature")
+                    .setPayload("{\"value\":" + (20 + i) + "}")
+                    .build();
+
+            kafkaTemplate.send(new ProducerRecord<>("events.in", event.getDeviceId(), event));
+        }
+
+        await().atMost(40, TimeUnit.SECONDS).until(() -> {
+            List<EventEntity> allEvents = cassandraOperations.select("SELECT * FROM device_event", EventEntity.class);
+            return allEvents.size() == 5;
+        });
+
+        List<EventEntity> allEvents = cassandraOperations.select("SELECT * FROM device_event", EventEntity.class);
+        assertEquals(5, allEvents.size(), "All 5 events should be processed");
+    }
+
+    @Test
+    void testEventWithDifferentDeviceIds() {
+        DeviceEvent event1 = DeviceEvent.newBuilder()
+                .setEventId("event-device-1")
+                .setDeviceId("device-alpha")
+                .setTimestamp(System.currentTimeMillis())
+                .setType("humidity")
+                .setPayload("{\"value\":60}")
+                .build();
+
+        DeviceEvent event2 = DeviceEvent.newBuilder()
+                .setEventId("event-device-2")
+                .setDeviceId("device-beta")
+                .setTimestamp(System.currentTimeMillis())
+                .setType("pressure")
+                .setPayload("{\"value\":1013}")
+                .build();
+
+        kafkaTemplate.send(new ProducerRecord<>("events.in", event1.getDeviceId(), event1));
+        kafkaTemplate.send(new ProducerRecord<>("events.in", event2.getDeviceId(), event2));
+
+
+        await().atMost(30, TimeUnit.SECONDS).until(() -> {
+            EventEntity saved1 = eventService.findByEventId(event1.getEventId());
+            EventEntity saved2 = eventService.findByEventId(event2.getEventId());
+            return saved1 != null && saved2 != null;
+        });
+
+        EventEntity saved1 = eventService.findByEventId(event1.getEventId());
+        EventEntity saved2 = eventService.findByEventId(event2.getEventId());
+
+        assertEquals("device-alpha", saved1.getDeviceId());
+        assertEquals("device-beta", saved2.getDeviceId());
+        assertEquals("humidity", saved1.getType());
+        assertEquals("pressure", saved2.getType());
+    }
+
+    @Test
+    void testEventWithLargePayload() {
+        String largePayload = "{\"value\":25,\"sensors\":[" +
+                "\"temp1\",\"temp2\",\"temp3\",\"humidity1\",\"pressure1\"," +
+                "\"voltage\",\"current\",\"power\",\"frequency\",\"status\"" +
+                "],\"metadata\":{\"version\":\"1.0\",\"timestamp\":\"2024-01-01T00:00:00Z\"}}";
+
+        DeviceEvent event = DeviceEvent.newBuilder()
+                .setEventId("large-payload-event")
+                .setDeviceId("industrial-device-1")
+                .setTimestamp(System.currentTimeMillis())
+                .setType("complex_measurement")
+                .setPayload(largePayload)
+                .build();
+
+        kafkaTemplate.send(new ProducerRecord<>("events.in", event.getDeviceId(), event));
+
+        await().atMost(30, TimeUnit.SECONDS).until(() -> {
+            EventEntity savedEvent = eventService.findByEventId(event.getEventId());
+            return savedEvent != null && savedEvent.getPayload().equals(largePayload);
+        });
+
+        EventEntity savedEvent = eventService.findByEventId(event.getEventId());
+        assertEquals(largePayload, savedEvent.getPayload());
+        assertEquals("industrial-device-1", savedEvent.getDeviceId());
+    }
+
+    @Test
+    void testEventOrderingByTimestamp() {
+        long baseTime = System.currentTimeMillis();
+
+        DeviceEvent event1 = DeviceEvent.newBuilder()
+                .setEventId("order-event-1")
+                .setDeviceId("ordered-device")
+                .setTimestamp(baseTime + 1000)
+                .setType("temperature")
+                .setPayload("{\"value\":30}")
+                .build();
+
+        DeviceEvent event2 = DeviceEvent.newBuilder()
+                .setEventId("order-event-2")
+                .setDeviceId("ordered-device")
+                .setTimestamp(baseTime)
+                .setType("temperature")
+                .setPayload("{\"value\":25}")
+                .build();
+
+        kafkaTemplate.send(new ProducerRecord<>("events.in", event1.getDeviceId(), event1));
+        kafkaTemplate.send(new ProducerRecord<>("events.in", event2.getDeviceId(), event2));
+
+        await().atMost(30, TimeUnit.SECONDS).until(() -> {
+            EventEntity saved1 = eventService.findByEventId(event1.getEventId());
+            EventEntity saved2 = eventService.findByEventId(event2.getEventId());
+            return saved1 != null && saved2 != null;
+        });
+
+        EventEntity saved1 = eventService.findByEventId(event1.getEventId());
+        EventEntity saved2 = eventService.findByEventId(event2.getEventId());
+
+        assertEquals(baseTime + 1000, saved1.getTimestamp());
+        assertEquals(baseTime, saved2.getTimestamp());
     }
 }
