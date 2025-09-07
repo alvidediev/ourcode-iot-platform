@@ -1,0 +1,28 @@
+{
+  "name": "ourcode-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "postgres",
+    "database.password": "postgres",
+    "database.dbname": "ourcode",
+
+    "plugin.name": "pgoutput",
+    "slot.name": "ourcode_slot",
+    "publication.name": "ourcode_pub",
+
+    "table.include.list": "public.outbox_events",
+    "topic.prefix": "ourcode",
+
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter.schemas.enable": "false",
+
+    "snapshot.mode": "initial",
+    "slot.drop.on.stop": "false",
+
+    "include.schema.changes": "true"
+  }
+}

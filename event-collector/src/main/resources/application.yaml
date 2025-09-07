@@ -1,0 +1,55 @@
+spring:
+  main:
+    web-application-type: servlet
+  application:
+    name: event-collector
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    listener:
+      ack-mode: manual_immediate
+    consumer:
+      group-id: avro-reactive-group
+      auto-offset-reset:
+      enable-auto-commit: false
+      max-poll-records: 100
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: io.confluent.kafka.serializers.KafkaAvroDeserializer
+      properties:
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+        specific.avro.reader: true
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+      properties:
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+        acks: all
+        enable.idempotence: true
+  cassandra:
+    contact-points: ${CASSANDRA_CONTACT_POINTS:localhost}
+    port: 9042
+    keyspace-name: ${CASSANDRA_KEYSPACE:event_keyspace}
+    local-datacenter: datacenter1
+    username: ${CASSANDRA_USERNAME:cassandra}
+    password: ${CASSANDRA_PASSWORD:cassandra}
+    schema-action: create-if-not-exists
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus, loggers
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+      sampling:
+        probability: 1.0  # для dev — все запросы трейсим
+  otlp:
+    tracing:
+      endpoint: ${ALLOY_URL:http://localhost:4318/v1/traces}
+server:
+  port: ${SERVER_PORT:10000}
+  address: 0.0.0.0
