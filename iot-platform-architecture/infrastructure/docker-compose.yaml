@@ -25,6 +25,137 @@ services:
     networks:
       - observability-net
 
+  #-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-#
+
+  #Device-collector
+  device-collector:
+    build: ../../device-collector/
+    container_name: device-collector
+    depends_on:
+      kafka:
+        condition: service_healthy
+      shard0:
+        condition: service_healthy
+      replica0:
+        condition: service_healthy
+      shard1:
+        condition: service_healthy
+      replica1:
+        condition: service_healthy
+    environment:
+      PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+      KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS}
+      SCHEMA_REGISTRY_URL: ${SCHEMA_REGISTRY_URL}
+      SERVER_PORT: ${DEVICE_COLLECTOR_SERVER_PORT}
+      ALLOY_URL: ${ALLOY_URL}
+      SHARD0URL: ${SHARD0URL}
+      REPLICA0URL: ${REPLICA0URL}
+      SHARD1URL: ${SHARD1URL}
+      REPLICA1URL: ${REPLICA1URL}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "9051:${DEVICE_COLLECTOR_SERVER_PORT}"
+    networks:
+      - observability-net
+      - device-collector
+
+  shard0:
+    image: bitnami/postgresql:14
+    container_name: device_collector_db1_master
+    restart: unless-stopped
+    ports:
+      - "7001:5432"
+    volumes:
+      - shar0_data:/var/lib/postgresql/data
+    environment:
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: ${POSTGRESQL_REPLICATION_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRESQL_REPLICATION_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_SHARD0_MASTER}
+    networks:
+      - device-collector
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${POSTGRES_USER}" ]
+      interval: 10s
+      retries: 5
+
+  replica0:
+    image: bitnami/postgresql:14
+    container_name: device_collector_db1_slave
+    restart: unless-stopped
+    ports:
+      - "7002:5432"
+    volumes:
+      - replica0_data:/var/lib/postgresql/data
+    depends_on:
+      shard0:
+        condition: service_healthy
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_REPLICATION_USER: ${POSTGRESQL_REPLICATION_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRESQL_REPLICATION_PASSWORD}
+      POSTGRESQL_MASTER_HOST: shard0
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - device-collector
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${POSTGRES_USER}" ]
+      interval: 10s
+      retries: 5
+
+  shard1:
+    image: bitnami/postgresql:14
+    container_name: device_collector_db2_master
+    restart: unless-stopped
+    ports:
+      - "7003:5432"
+    volumes:
+      - shard1_data:/var/lib/postgresql/data
+    environment:
+      POSTGRESQL_REPLICATION_MODE: master
+      POSTGRESQL_REPLICATION_USER: ${POSTGRESQL_REPLICATION_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRESQL_REPLICATION_PASSWORD}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_SHARD1_MASTER}
+    networks:
+      - device-collector
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${POSTGRES_USER}" ]
+      interval: 10s
+      retries: 5
+
+  replica1:
+    image: bitnami/postgresql:14
+    container_name: device_collector_db2_slave
+    restart: unless-stopped
+    depends_on:
+      shard1:
+        condition: service_healthy
+    ports:
+      - "7004:5432"
+    volumes:
+      - replica1_data:/var/lib/postgresql/data
+    environment:
+      POSTGRESQL_REPLICATION_MODE: slave
+      POSTGRESQL_REPLICATION_USER: ${POSTGRESQL_REPLICATION_USER}
+      POSTGRESQL_REPLICATION_PASSWORD: ${POSTGRESQL_REPLICATION_PASSWORD}
+      POSTGRESQL_MASTER_HOST: shard1
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    networks:
+      - device-collector
+    healthcheck:
+      test: [ "CMD", "pg_isready", "-U", "${POSTGRES_USER}" ]
+      interval: 10s
+      retries: 5
+
+  #-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-|-#
+
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -85,33 +216,6 @@ services:
     depends_on:
       zookeeper:
         condition: service_healthy
-    networks:
-      - observability-net
-
-  debezium:
-    image: debezium/connect:2.5
-    container_name: debezium
-    ports:
-      - "8083:8083"
-    environment:
-      BOOTSTRAP_SERVERS: kafka:9092
-      GROUP_ID: 1
-      CONFIG_STORAGE_TOPIC: connect_configs
-      OFFSET_STORAGE_TOPIC: connect_offsets
-      STATUS_STORAGE_TOPIC: connect_statuses
-      CONNECT_KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      CONNECT_VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
-      CONNECT_REST_ADVERTISED_HOST_NAME: connect
-    depends_on:
-      kafka:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: [ "CMD", "curl", "--fail", "--silent", "http://localhost:8083/connectors" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - observability-net
 
@@ -225,29 +329,6 @@ services:
     volumes:
       - ./cassandra/init.cql:/init.cql:ro
     command: cqlsh -u cassandra -p cassandra cassandra -f /init.cql;
-    networks:
-      - observability-net
-
-  debezium-init:
-    image: curlimages/curl:latest  # ← Используем официальный curl образ
-    depends_on:
-      debezium:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      kafka:
-        condition: service_healthy
-    volumes:
-      - ./debezium-config.json:/debezium-config.json:ro
-    command: >
-      
-      curl -i -X POST -H 'Content-Type: application/json' \
-        --data @/debezium-config.json \
-        http://debezium:8083/connectors;
-      
-      echo 'Debezium configuration completed!';
-      echo 'Listing connectors:';
-      curl -s http://debezium:8083/connectors | jq .;
     networks:
       - observability-net
 
@@ -520,6 +601,10 @@ services:
 
 
 volumes:
+  shar0_data:
+  replica0_data:
+  shard1_data:
+  replica1_data:
   postgres_data:
   grafana_data:
   cassandradata:
@@ -537,4 +622,6 @@ volumes:
 
 networks:
   observability-net:
+    driver: bridge
+  device-collector:
     driver: bridge

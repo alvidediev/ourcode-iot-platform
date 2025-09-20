@@ -14,6 +14,14 @@ scrape_configs:
           application: 'event-collector'
           environment: 'docker'
 
+  - job_name: 'device-collector'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: [ 'device-collector:10001' ]
+        labels:
+          application: 'device-collector'
+          environment: 'docker'
+
   - job_name: 'alloy'
     static_configs:
       - targets: ['alloy:9080']

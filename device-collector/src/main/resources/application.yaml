@@ -1,0 +1,60 @@
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: none
+  main:
+    web-application-type: servlet
+  application:
+    name: device-collector
+  kafka:
+    consumer:
+      properties:
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+        specific.avro.reader: true
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+      properties:
+        schema.registry.url: ${SCHEMA_REGISTRY_URL:http://localhost:8081}
+        acks: all
+        enable.idempotence: true
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:29092}
+
+sharding:
+  shard0Master:
+    url: ${SHARD0URL}
+  shard0Replica:
+    url: ${REPLICA0URL}
+  shard1Master:
+    url: ${SHARD1URL}
+  shard1Replica:
+    url: ${REPLICA1URL}
+
+datasource:
+  username: ${POSTGRES_USER}
+  password: ${POSTGRES_PASSWORD}
+  driverClassName: org.postgresql.Driver
+
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, metrics, prometheus, loggers
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+  tracing:
+    sampling:
+      probability: 1.0
+  otlp:
+    tracing:
+      endpoint: ${ALLOY_URL:http://localhost:4318/v1/traces}
+server:
+  port: ${SERVER_PORT:10001}
+  address: 0.0.0.0
