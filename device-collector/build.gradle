@@ -1,0 +1,109 @@
+plugins {
+	id 'java'
+	id 'org.springframework.boot' version '3.5.5'
+	id 'io.spring.dependency-management' version '1.1.7'
+	id "com.github.davidmc24.gradle.plugin.avro" version "1.9.1"
+	id 'org.flywaydb.flyway' version "11.11.1"
+}
+
+group = 'com.ourcode'
+version = '0.0.1-SNAPSHOT'
+description = 'device-collector'
+
+java {
+	toolchain {
+		languageVersion = JavaLanguageVersion.of(24)
+	}
+}
+
+sourceSets {
+	integrationTest {
+		java.srcDir file('src/test/java/')
+		resources.srcDir file('src/test/resources')
+		compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+		runtimeClasspath += output + compileClasspath
+	}
+}
+
+configurations {
+	compileOnly {
+		extendsFrom annotationProcessor
+	}
+	integrationTestImplementation.extendsFrom testImplementation
+	integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
+repositories {
+	mavenCentral()
+	maven {
+		url = 'https://packages.confluent.io/maven/'
+	}
+}
+
+dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+	implementation 'org.springframework.kafka:spring-kafka'
+	implementation 'org.flywaydb:flyway-core'
+	compileOnly 'org.projectlombok:lombok'
+	runtimeOnly 'org.postgresql:postgresql'
+	annotationProcessor 'org.projectlombok:lombok'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	testImplementation 'org.springframework.kafka:spring-kafka-test'
+	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	implementation 'org.springframework.boot:spring-boot-starter-web'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	testImplementation 'org.testcontainers:postgresql'
+	implementation "org.apache.avro:avro:$apacheAvroVersion"
+	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+	testImplementation 'org.testcontainers:junit-jupiter'
+	testImplementation 'org.testcontainers:kafka'
+	implementation "io.confluent:kafka-avro-serializer:$kafkaAvroSerializerVersion"
+	implementation "io.confluent:kafka-schema-registry-client:$schemaRegistryClientVersion"
+	implementation "org.mapstruct:mapstruct:$mapstructVersion"
+	annotationProcessor "org.mapstruct:mapstruct-processor:$mapstructAnnotationProcessorVersion"
+	runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
+	implementation 'io.micrometer:micrometer-tracing-bridge-otel'
+	implementation 'io.opentelemetry:opentelemetry-exporter-otlp'
+	implementation 'javax.xml.bind:jaxb-api:2.3.1'
+	implementation 'org.glassfish.jaxb:jaxb-runtime:2.3.1'
+	implementation 'org.apache.shardingsphere:shardingsphere-jdbc:5.5.2'
+	// https://mvnrepository.com/artifact/org.flywaydb/flyway-database-postgresql
+	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
+}
+
+avro {
+
+}
+
+tasks.named('test') {
+	useJUnitPlatform()
+	include '**/*Test.class'
+	exclude '**/*IT.class'
+	exclude '**/*IntegrationTest.class'
+}
+
+tasks.register('integrationTest', Test) {
+	description = "Runs integration tests."
+	group = "verification"
+	testClassesDirs = sourceSets.test.output.classesDirs
+	classpath = sourceSets.test.runtimeClasspath
+	useJUnitPlatform()
+	include '**/*IT.class'
+	include '**/*IntegrationTest.class'
+	exclude '**/*Test.class'
+}
+
+tasks.register('allTests') {
+	description = "Runs both unit and integration tests."
+	group = "verification"
+	dependsOn test, integrationTest
+}
+
+tasks.named('bootJar') {
+	enabled = true
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+tasks.named('jar') {
+	enabled = false
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}

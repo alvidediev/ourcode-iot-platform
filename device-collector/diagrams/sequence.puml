@@ -1,0 +1,20 @@
+@startuml
+
+actor EventService
+participant "Kafka Topic: device-ids" as KDI
+participant DeviceCollector
+database ShardingSphere
+participant "Kafka Topic: dead-letter-queue" as DLT
+
+EventService -> KDI: send telemetry
+KDI -> DeviceCollector: handle(List<ConsumerRecord>)
+activate DeviceCollector
+DeviceCollector -> ShardingSphere: save(devices)
+activate ShardingSphere
+ShardingSphere --> DeviceCollector
+deactivate ShardingSphere
+alt
+DeviceCollector --> DLT: send broken messages
+end
+deactivate DeviceCollector
+@enduml
